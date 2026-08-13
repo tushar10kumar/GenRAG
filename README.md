@@ -95,7 +95,7 @@ You can use both a local LLM or an LLM from an API like Gemini for generating re
 
 ## Author
 
-**Ashish Prasad** - [@AkprasadoP](https://github.com/AkprasadoP)
+**Ashish Prasad** - [@tushar10kumar](https://github.com/tushar10kumar)
 
 This project is developed and maintained by Ashish Prasad.
 
