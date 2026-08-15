@@ -182,8 +182,8 @@ st.markdown("""
 
 # Helper for OTP Email Dispatch
 def send_otp_email(receiver_email, otp_code):
-    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 587
     sender_email = ""
     sender_password = ""
     
@@ -192,6 +192,10 @@ def send_otp_email(receiver_email, otp_code):
             sender_email = st.secrets["SMTP_EMAIL"]
         if "SMTP_PASSWORD" in st.secrets:
             sender_password = st.secrets["SMTP_PASSWORD"]
+        if "SMTP_SERVER" in st.secrets:
+            smtp_server = st.secrets["SMTP_SERVER"]
+        if "SMTP_PORT" in st.secrets:
+            smtp_port = int(st.secrets["SMTP_PORT"])
     except Exception:
         pass
         
@@ -199,6 +203,10 @@ def send_otp_email(receiver_email, otp_code):
         sender_email = os.environ.get("SMTP_EMAIL", "")
     if not sender_password:
         sender_password = os.environ.get("SMTP_PASSWORD", "")
+    if os.environ.get("SMTP_SERVER"):
+        smtp_server = os.environ.get("SMTP_SERVER")
+    if os.environ.get("SMTP_PORT"):
+        smtp_port = int(os.environ.get("SMTP_PORT"))
     
     if not sender_email or not sender_password:
         return False, "Demo Mode: SMTP credentials not set."
