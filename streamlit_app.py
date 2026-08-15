@@ -153,41 +153,6 @@ st.markdown("""
         margin-top: 0.2rem;
     }
     
-    /* Developer Profile Card in Sidebar */
-    .dev-profile-card {
-        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
-        border: 1px solid rgba(56, 189, 248, 0.3);
-        border-radius: 16px;
-        padding: 1.2rem;
-        text-align: center;
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-    }
-    
-    .dev-img-container img {
-        width: 100px;
-        height: 100px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 3px solid #38bdf8;
-        box-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
-    }
-    
-    .dev-name {
-        font-family: 'Outfit', sans-serif;
-        font-size: 1.2rem;
-        font-weight: 700;
-        color: #f8fafc;
-        margin-top: 0.6rem;
-    }
-    
-    .dev-title {
-        font-size: 0.82rem;
-        color: #38bdf8;
-        font-weight: 500;
-    }
-    
     .answer-card {
         background: linear-gradient(145deg, rgba(15, 23, 42, 0.95) 0%, rgba(11, 15, 25, 0.98) 100%);
         border-left: 4px solid #8b5cf6;
@@ -219,11 +184,24 @@ st.markdown("""
 def send_otp_email(receiver_email, otp_code):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
-    sender_email = os.environ.get("SMTP_EMAIL", "")
-    sender_password = os.environ.get("SMTP_PASSWORD", "")
+    sender_email = ""
+    sender_password = ""
+    
+    try:
+        if "SMTP_EMAIL" in st.secrets:
+            sender_email = st.secrets["SMTP_EMAIL"]
+        if "SMTP_PASSWORD" in st.secrets:
+            sender_password = st.secrets["SMTP_PASSWORD"]
+    except Exception:
+        pass
+        
+    if not sender_email:
+        sender_email = os.environ.get("SMTP_EMAIL", "")
+    if not sender_password:
+        sender_password = os.environ.get("SMTP_PASSWORD", "")
     
     if not sender_email or not sender_password:
-        return False, "Demo Mode: SMTP credentials not set in environment."
+        return False, "Demo Mode: SMTP credentials not set."
     
     try:
         msg = MIMEMultipart()
@@ -263,6 +241,8 @@ if "otp_code" not in st.session_state:
     st.session_state["otp_code"] = ""
 if "otp_sent" not in st.session_state:
     st.session_state["otp_sent"] = False
+if "real_email_sent" not in st.session_state:
+    st.session_state["real_email_sent"] = False
 
 # ==========================================
 # AUTHENTICATION FLOW (LOGIN & OTP VERIFY)
@@ -287,16 +267,23 @@ if not st.session_state["authenticated"]:
                     
                     sent_success, msg = send_otp_email(email_input.strip(), otp)
                     st.session_state["otp_sent"] = True
-                    
-                    if sent_success:
-                        st.success(f"✅ OTP sent to {email_input.strip()}!")
-                    else:
-                        st.info(f"🔑 **Demo OTP Mode Active**: Your verification OTP is: `{otp}`")
+                    st.session_state["real_email_sent"] = sent_success
                     st.rerun()
                 else:
                     st.warning("Please enter a valid email address.")
         else:
-            st.info(f"📨 Verification code dispatched to **{st.session_state['user_email']}**")
+            if st.session_state["real_email_sent"]:
+                st.success(f"✅ OTP email sent to **{st.session_state['user_email']}**! Please check your inbox.")
+            else:
+                st.warning("⚠️ SMTP email credentials not configured in secrets.")
+                st.markdown(f"""
+                <div style="background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; border-radius: 12px; padding: 1.2rem; text-align: center; margin-bottom: 1rem;">
+                    <h3 style="color: #38bdf8; margin-top:0;">🔑 Your Verification OTP</h3>
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 2.2rem; font-weight: 700; color: #4ade80; letter-spacing: 4px;">{st.session_state['otp_code']}</div>
+                    <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 0; margin-top: 0.5rem;">Enter the 6-digit code above to log in!</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
             otp_input = st.text_input("🔐 Enter 6-Digit Verification OTP", placeholder="e.g. 123456", max_chars=6)
             
             col_v1, col_v2 = st.columns(2)
@@ -307,7 +294,7 @@ if not st.session_state["authenticated"]:
                         st.toast("Welcome to GenRAG!", icon="🎉")
                         st.rerun()
                     else:
-                        st.error("Invalid OTP code. Please check and try again.")
+                        st.error("Invalid OTP code. Please try again.")
             with col_v2:
                 if st.button("🔄 Resend / Change Email", use_container_width=True):
                     st.session_state["otp_sent"] = False
@@ -407,7 +394,6 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # Sidebar Configuration
 with st.sidebar:
-    # Authenticated User Badge
     st.markdown(f"👤 **Logged in as**: `{st.session_state['user_email']}`")
     if st.button("🚪 Log Out", use_container_width=True):
         st.session_state["authenticated"] = False
@@ -489,7 +475,6 @@ with st.sidebar:
 # Main Query Section
 st.markdown("### 💬 Ask Document Intelligence Assistant")
 
-# Suggested Quick Prompts
 st.caption("Suggested Quick Prompts:")
 suggested_cols = st.columns(3)
 selected_query = ""
