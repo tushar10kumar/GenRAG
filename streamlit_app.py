@@ -1,6 +1,10 @@
 import os
 import re
 import glob
+import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -22,7 +26,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS styling for vibrant aesthetics, animations, and glassmorphism
+# Custom CSS styling for vibrant aesthetics, glassmorphism, and developer profile
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -31,22 +35,34 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
-    /* Background space theme */
     .stApp {
         background: radial-gradient(circle at 50% 0%, #111827 0%, #070a12 100%);
         color: #f1f5f9;
     }
     
-    /* Animated Gradient Header Banner */
+    /* Login Glassmorphism Box */
+    .login-container {
+        max-width: 480px;
+        margin: 3rem auto;
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(10, 15, 26, 0.95) 100%);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        padding: 2.5rem;
+        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.15);
+        text-align: center;
+    }
+    
+    /* Hero Banner */
     .hero-banner {
         position: relative;
         background: linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0%, rgba(10, 15, 26, 0.95) 100%);
         backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 20px;
-        padding: 2.8rem 2.2rem;
+        padding: 2.5rem 2.2rem;
         margin-bottom: 2rem;
-        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 30px rgba(56, 189, 248, 0.08);
+        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
         overflow: hidden;
     }
     
@@ -68,23 +84,14 @@ st.markdown("""
     
     .hero-title {
         font-family: 'Outfit', sans-serif;
-        font-size: 3rem;
+        font-size: 2.8rem;
         font-weight: 800;
         background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.3rem;
-        letter-spacing: -0.8px;
     }
     
-    .hero-subtitle {
-        color: #94a3b8;
-        font-size: 1.15rem;
-        font-weight: 400;
-        margin-bottom: 1.2rem;
-    }
-    
-    /* Glowing Pulse Dot */
     .status-pulse {
         display: inline-block;
         width: 10px;
@@ -115,7 +122,7 @@ st.markdown("""
         margin-right: 0.6rem;
     }
     
-    /* Stat Cards with Glow Effect */
+    /* Stat Cards */
     .stat-card {
         background: rgba(15, 23, 42, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -123,13 +130,12 @@ st.markdown("""
         padding: 1.2rem 1rem;
         text-align: center;
         backdrop-filter: blur(12px);
-        transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        transition: transform 0.3s ease;
     }
     
     .stat-card:hover {
         transform: translateY(-4px);
         border-color: rgba(56, 189, 248, 0.4);
-        box-shadow: 0 8px 25px -5px rgba(56, 189, 248, 0.2);
     }
     
     .stat-value {
@@ -145,10 +151,43 @@ st.markdown("""
         font-size: 0.85rem;
         color: #94a3b8;
         margin-top: 0.2rem;
+    }
+    
+    /* Developer Profile Card in Sidebar */
+    .dev-profile-card {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        border-radius: 16px;
+        padding: 1.2rem;
+        text-align: center;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    }
+    
+    .dev-img-container img {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid #38bdf8;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+    }
+    
+    .dev-name {
+        font-family: 'Outfit', sans-serif;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #f8fafc;
+        margin-top: 0.6rem;
+    }
+    
+    .dev-title {
+        font-size: 0.82rem;
+        color: #38bdf8;
         font-weight: 500;
     }
     
-    /* Response card styling */
     .answer-card {
         background: linear-gradient(145deg, rgba(15, 23, 42, 0.95) 0%, rgba(11, 15, 25, 0.98) 100%);
         border-left: 4px solid #8b5cf6;
@@ -159,12 +198,10 @@ st.markdown("""
         padding: 2rem;
         margin-top: 1rem;
         margin-bottom: 1.5rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         font-size: 1.05rem;
         line-height: 1.75;
     }
     
-    /* Button Hover Micro-animations */
     div.stButton > button {
         border-radius: 10px;
         font-weight: 600;
@@ -175,14 +212,112 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(56, 189, 248, 0.35);
     }
-    
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #0b0f17;
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
-    }
 </style>
 """, unsafe_allow_html=True)
+
+# Helper for OTP Email Dispatch
+def send_otp_email(receiver_email, otp_code):
+    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    sender_email = os.environ.get("SMTP_EMAIL", "")
+    sender_password = os.environ.get("SMTP_PASSWORD", "")
+    
+    if not sender_email or not sender_password:
+        return False, "Demo Mode: SMTP credentials not set in environment."
+    
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = f"GenRAG AI <{sender_email}>"
+        msg['To'] = receiver_email
+        msg['Subject'] = f"🔑 {otp_code} is your GenRAG Verification Code"
+        
+        body = f"""
+        Hello,
+        
+        Your one-time passcode (OTP) to log in to GenRAG AI Document Intelligence is:
+        
+        🔐 {otp_code}
+        
+        This OTP is valid for 10 minutes. Please do not share this code with anyone.
+        
+        Best regards,
+        Tushar Kumar — GenRAG Developer
+        """
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, msg.as_string())
+        server.quit()
+        return True, f"OTP email sent successfully to {receiver_email}!"
+    except Exception as e:
+        return False, f"Failed to send email: {str(e)}"
+
+# Session State Initializations
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = ""
+if "otp_code" not in st.session_state:
+    st.session_state["otp_code"] = ""
+if "otp_sent" not in st.session_state:
+    st.session_state["otp_sent"] = False
+
+# ==========================================
+# AUTHENTICATION FLOW (LOGIN & OTP VERIFY)
+# ==========================================
+if not st.session_state["authenticated"]:
+    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    with col_l2:
+        st.markdown("""
+        <div style="text-align: center; margin-top: 2rem;">
+            <h1 style="font-family: 'Outfit', sans-serif; font-size: 2.8rem; background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ GenRAG Login</h1>
+            <p style="color: #94a3b8;">Enter your email address to receive a 6-digit OTP verification code.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if not st.session_state["otp_sent"]:
+            email_input = st.text_input("📧 Enter Your Email Address", placeholder="e.g. user@example.com")
+            if st.button("🚀 Send OTP via Email", type="primary", use_container_width=True):
+                if email_input and "@" in email_input:
+                    otp = str(random.randint(100000, 999999))
+                    st.session_state["otp_code"] = otp
+                    st.session_state["user_email"] = email_input.strip()
+                    
+                    sent_success, msg = send_otp_email(email_input.strip(), otp)
+                    st.session_state["otp_sent"] = True
+                    
+                    if sent_success:
+                        st.success(f"✅ OTP sent to {email_input.strip()}!")
+                    else:
+                        st.info(f"🔑 **Demo OTP Mode Active**: Your verification OTP is: `{otp}`")
+                    st.rerun()
+                else:
+                    st.warning("Please enter a valid email address.")
+        else:
+            st.info(f"📨 Verification code dispatched to **{st.session_state['user_email']}**")
+            otp_input = st.text_input("🔐 Enter 6-Digit Verification OTP", placeholder="e.g. 123456", max_chars=6)
+            
+            col_v1, col_v2 = st.columns(2)
+            with col_v1:
+                if st.button("✅ Verify & Log In", type="primary", use_container_width=True):
+                    if otp_input.strip() == st.session_state["otp_code"]:
+                        st.session_state["authenticated"] = True
+                        st.toast("Welcome to GenRAG!", icon="🎉")
+                        st.rerun()
+                    else:
+                        st.error("Invalid OTP code. Please check and try again.")
+            with col_v2:
+                if st.button("🔄 Resend / Change Email", use_container_width=True):
+                    st.session_state["otp_sent"] = False
+                    st.session_state["otp_code"] = ""
+                    st.rerun()
+    st.stop()
+
+# ==========================================
+# MAIN APPLICATION (AUTHENTICATED SESSION)
+# ==========================================
 
 def simple_sentence_split(text):
     sentences = re.split(r'[.!?]+', text)
@@ -240,7 +375,7 @@ st.markdown("""
     <div class="hero-title">⚡ GenRAG Intelligence System</div>
     <div class="hero-subtitle">Production Retrieval-Augmented Generation Architecture Built from Scratch</div>
     <div>
-        <span class="badge-pill"><span class="status-pulse"></span> System Ready</span>
+        <span class="badge-pill"><span class="status-pulse"></span> System Active</span>
         <span class="badge-pill">🧠 Sentence-BERT Vector Embeddings</span>
         <span class="badge-pill">🤖 Google Gemini 1.5 LLM</span>
         <span class="badge-pill">⚡ Sub-Millisecond Search</span>
@@ -248,7 +383,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Load data early to populate stats
+# Load RAG data
 try:
     with st.spinner("Loading document matrix..."):
         pages_and_chunks, embeddings, embeddings_df_save_path = load_rag_data()
@@ -272,6 +407,33 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # Sidebar Configuration
 with st.sidebar:
+    # Authenticated User Badge
+    st.markdown(f"👤 **Logged in as**: `{st.session_state['user_email']}`")
+    if st.button("🚪 Log Out", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.session_state["user_email"] = ""
+        st.session_state["otp_sent"] = False
+        st.session_state["otp_code"] = ""
+        st.rerun()
+
+    st.markdown("---")
+    
+    # DEVELOPER PROFILE CARD WITH PHOTO
+    st.markdown("### 👨‍💻 Developer Profile")
+    dev_img_path = "assets/developer.jpg"
+    if os.path.exists(dev_img_path):
+        st.image(dev_img_path, caption="Tushar Kumar — Developer & Maintainer", use_container_width=True)
+    else:
+        st.markdown("🧑‍💻 **Tushar Kumar**")
+    
+    st.markdown("""
+    **Tushar Kumar**  
+    *Creator & Maintainer of GenRAG*  
+    🔗 [GitHub Profile](https://github.com/tushar10kumar)  
+    🔗 [Project Repository](https://github.com/tushar10kumar/GenRAG)
+    """)
+
+    st.markdown("---")
     st.markdown("## ⚙️ Control Center")
     
     gemini_key = ""
@@ -323,16 +485,11 @@ with st.sidebar:
             st.markdown(f"• 📄 `{os.path.basename(p)}`")
     else:
         st.write("No PDF files found.")
-        
-    st.markdown("---")
-    st.markdown("👨‍💻 **Developer**: [Tushar Kumar](https://github.com/tushar10kumar)")
-    st.markdown("🔗 [GitHub Repository](https://github.com/tushar10kumar/GenRAG)")
-    st.markdown("🌐 [Live Web App](https://genrag-x5xm3zputvdyxfv654zvmp.streamlit.app)")
 
 # Main Query Section
 st.markdown("### 💬 Ask Document Intelligence Assistant")
 
-# Quick Prompt Suggestions
+# Suggested Quick Prompts
 st.caption("Suggested Quick Prompts:")
 suggested_cols = st.columns(3)
 selected_query = ""
@@ -369,13 +526,11 @@ if (search_button or selected_query) and query:
                 embeddings_df_save_path=embeddings_df_save_path
             )
             
-            # Use Tabs for organized viewing
             tab1, tab2 = st.tabs(["🤖 AI Answer", "📖 Retrieved Evidence Chunks"])
             
             with tab1:
                 st.markdown(f'<div class="answer-card">{ans}</div>', unsafe_allow_html=True)
                 
-                # Feedback & Download row
                 col_fb1, col_fb2, col_fb3 = st.columns([2, 1, 1])
                 with col_fb1:
                     st.download_button(
