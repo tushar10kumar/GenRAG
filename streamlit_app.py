@@ -476,7 +476,26 @@ with st.sidebar:
     st.markdown("### 📚 Active Knowledge Base")
     if pdf_list:
         for p in pdf_list:
-            st.markdown(f"• 📄 `{os.path.basename(p)}`")
+            fname = os.path.basename(p)
+            col_pdf_name, col_pdf_del = st.columns([4, 1])
+            with col_pdf_name:
+                st.markdown(f"📄 `{fname}`")
+            with col_pdf_del:
+                if st.button("🗑️", key=f"del_{fname}", help=f"Delete {fname}"):
+                    try:
+                        os.remove(p)
+                        embeddings_df_save_path = "data/text_chunks_and_embeddings_df.csv"
+                        if os.path.exists(embeddings_df_save_path):
+                            os.remove(embeddings_df_save_path)
+                        
+                        remaining_pdfs = glob.glob("data/*.pdf")
+                        if remaining_pdfs:
+                            generate_embeddings_for_pdfs(remaining_pdfs, embeddings_df_save_path)
+                        st.cache_resource.clear()
+                        st.success(f"Deleted '{fname}'!")
+                        st.rerun()
+                    except Exception as e_del:
+                        st.error(f"Error deleting file: {str(e_del)}")
     else:
         st.write("No PDF files found.")
 
@@ -510,13 +529,19 @@ with btn_col1:
 if (search_button or selected_query) and query:
     with st.spinner("Searching document matrix & generating AI synthesis..."):
         try:
-            scores, indices = retrieve_relevant_resources(query=query, embeddings=embeddings)
+            num_chunks_to_get = min(6, len(pages_and_chunks))
+            scores, indices = retrieve_relevant_resources(
+                query=query,
+                embeddings=embeddings,
+                n_resources_to_return=num_chunks_to_get
+            )
             
             ans = ask(
                 query=query,
                 embeddings=embeddings,
                 pages_and_chunks=pages_and_chunks,
-                embeddings_df_save_path=embeddings_df_save_path
+                embeddings_df_save_path=embeddings_df_save_path,
+                n_resources_to_return=num_chunks_to_get
             )
             
             tab1, tab2 = st.tabs(["🤖 AI Answer", "📖 Retrieved Evidence Chunks"])
