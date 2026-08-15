@@ -1,4 +1,5 @@
 import os
+import re
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -88,11 +89,46 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def simple_sentence_split(text):
+    sentences = re.split(r'[.!?]+', text)
+    return [s.strip() for s in sentences if s.strip()]
+
+def auto_generate_embeddings(save_path):
+    pdf_path = "data/The_intelligent_investor.pdf"
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF document not found at {pdf_path}")
+    
+    from services.pdf_to_text import open_and_read_pdf
+    from services.text_to_chucks import split_list
+    from services.process_chunks import process_chunks
+    from services.embed_model import embed_text
+
+    pages_and_texts = open_and_read_pdf(pdf_path=pdf_path)
+    for item in pages_and_texts:
+        item["sentences"] = simple_sentence_split(item["text"])
+        item["page_sentence_count_spacy"] = len(item["sentences"])
+        item["sentence_chunks"] = split_list(input_list=item["sentences"], slice_size=10)
+        item["num_chunks"] = len(item["sentence_chunks"])
+
+    pages_and_chunks = process_chunks(pages_and_texts=pages_and_texts)
+    df = pd.DataFrame(pages_and_chunks)
+    valid_chunks = df[df["chunk_token_count"] > 30].to_dict(orient="records")
+    embed_text(valid_chunks)
+    
+    out_df = pd.DataFrame(valid_chunks)
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    out_df.to_csv(save_path, index=False)
+    return out_df
+
 # Load saved embeddings (cached for performance)
 @st.cache_resource
 def load_rag_data():
     embeddings_df_save_path = "data/text_chunks_and_embeddings_df.csv"
-    df = pd.read_csv(embeddings_df_save_path)
+    if not os.path.exists(embeddings_df_save_path):
+        df = auto_generate_embeddings(embeddings_df_save_path)
+    else:
+        df = pd.read_csv(embeddings_df_save_path)
+        
     df["embedding"] = df["embedding"].apply(lambda x: np.fromstring(x.strip("[]"), sep=" "))
     pages_and_chunks = df.to_dict(orient="records")
     embeddings = torch.tensor(np.array(df["embedding"].tolist()), dtype=torch.float32)
@@ -111,8 +147,15 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ Settings & Configuration")
     
-    # Gemini API Key input in sidebar if not set in environment or secrets
-    gemini_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    gemini_key = ""
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            gemini_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    
+    if not gemini_key:
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
     
     user_api_key = st.text_input(
         "Gemini API Key",
