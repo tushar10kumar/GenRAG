@@ -1,4 +1,4 @@
---extra-index-url https://download.pytorch.org/whl/cpu
+streamlit>=1.30.0
 torch
 sentence-transformers>=2.5.0
 transformers>=4.38.0
@@ -8,5 +8,4 @@ requests>=2.31.0
 tqdm>=4.66.0
 google-generativeai>=0.4.0
 python-dotenv>=1.0.0
-streamlit>=1.30.0
 PyMuPDF>=1.23.0
