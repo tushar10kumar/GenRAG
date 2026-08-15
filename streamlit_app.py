@@ -1,5 +1,6 @@
 import os
 import re
+import glob
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,10 +22,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS styling for premium look
+# Custom CSS styling
 st.markdown("""
 <style>
-    /* Main theme styling */
     .main {
         background-color: #0d1117;
         color: #c9d1d9;
@@ -32,8 +32,6 @@ st.markdown("""
     .stApp {
         background-color: #0d1117;
     }
-    
-    /* Header banner */
     .header-container {
         background: linear-gradient(135deg, #161b22 0%, #1f242c 100%);
         border: 1px solid #30363d;
@@ -47,20 +45,12 @@ st.markdown("""
         font-size: 2.5rem;
         font-weight: 700;
         margin-bottom: 0.2rem;
-        letter-spacing: -0.5px;
     }
     .header-subtitle {
         color: #8b949e;
         font-size: 1.1rem;
         margin-bottom: 0.5rem;
     }
-    .header-author {
-        color: #6e7681;
-        font-size: 0.9rem;
-        font-weight: 500;
-    }
-    
-    /* Result card styling */
     .answer-card {
         background-color: #161b22;
         border: 1px solid #30363d;
@@ -69,23 +59,6 @@ st.markdown("""
         margin-top: 1rem;
         margin-bottom: 1.5rem;
     }
-    
-    .chunk-box {
-        background-color: #161b22;
-        border-left: 4px solid #58a6ff;
-        border-radius: 4px;
-        padding: 1rem;
-        margin-bottom: 0.8rem;
-    }
-    
-    .score-badge {
-        background-color: #238636;
-        color: #ffffff;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,25 +66,27 @@ def simple_sentence_split(text):
     sentences = re.split(r'[.!?]+', text)
     return [s.strip() for s in sentences if s.strip()]
 
-def auto_generate_embeddings(save_path):
-    pdf_path = "data/The_intelligent_investor.pdf"
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF document not found at {pdf_path}")
-    
+def generate_embeddings_for_pdfs(pdf_paths, save_path):
     from services.pdf_to_text import open_and_read_pdf
     from services.text_to_chucks import split_list
     from services.process_chunks import process_chunks
     from services.embed_model import embed_text
 
-    pages_and_texts = open_and_read_pdf(pdf_path=pdf_path)
-    for item in pages_and_texts:
-        item["sentences"] = simple_sentence_split(item["text"])
-        item["page_sentence_count_spacy"] = len(item["sentences"])
-        item["sentence_chunks"] = split_list(input_list=item["sentences"], slice_size=10)
-        item["num_chunks"] = len(item["sentence_chunks"])
+    all_chunks = []
+    for pdf_path in pdf_paths:
+        file_name = os.path.basename(pdf_path)
+        pages_and_texts = open_and_read_pdf(pdf_path=pdf_path)
+        for item in pages_and_texts:
+            item["document_name"] = file_name
+            item["sentences"] = simple_sentence_split(item["text"])
+            item["page_sentence_count_spacy"] = len(item["sentences"])
+            item["sentence_chunks"] = split_list(input_list=item["sentences"], slice_size=10)
+            item["num_chunks"] = len(item["sentence_chunks"])
 
-    pages_and_chunks = process_chunks(pages_and_texts=pages_and_texts)
-    df = pd.DataFrame(pages_and_chunks)
+        chunks = process_chunks(pages_and_texts=pages_and_texts)
+        all_chunks.extend(chunks)
+
+    df = pd.DataFrame(all_chunks)
     valid_chunks = df[df["chunk_token_count"] > 30].to_dict(orient="records")
     embed_text(valid_chunks)
     
@@ -120,12 +95,15 @@ def auto_generate_embeddings(save_path):
     out_df.to_csv(save_path, index=False)
     return out_df
 
-# Load saved embeddings (cached for performance)
 @st.cache_resource
 def load_rag_data():
     embeddings_df_save_path = "data/text_chunks_and_embeddings_df.csv"
     if not os.path.exists(embeddings_df_save_path):
-        df = auto_generate_embeddings(embeddings_df_save_path)
+        pdf_files = glob.glob("data/*.pdf")
+        if not pdf_files:
+            st.error("No PDF files found in data directory.")
+            st.stop()
+        df = generate_embeddings_for_pdfs(pdf_files, embeddings_df_save_path)
     else:
         df = pd.read_csv(embeddings_df_save_path)
         
@@ -138,8 +116,8 @@ def load_rag_data():
 st.markdown("""
 <div class="header-container">
     <div class="header-title">⚡ GenRAG</div>
-    <div class="header-subtitle">AI-Powered Document Intelligence & Retrieval System</div>
-    <div class="header-author">Developed & Maintained by Tushar Kumar (Project by Ashish Prasad)</div>
+    <div class="header-subtitle">AI-Powered Multi-Document Intelligence System</div>
+    <div class="header-author">Developed & Maintained by Tushar Kumar</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -161,19 +139,44 @@ with st.sidebar:
         "Gemini API Key",
         value=gemini_key,
         type="password",
-        help="Required to generate AI responses. If deployed on Streamlit Cloud, set this in App Secrets."
+        help="Required to generate AI responses."
     )
     
     if user_api_key:
         os.environ["GEMINI_API_KEY"] = user_api_key
         st.success("API Key set successfully!", icon="✅")
     else:
-        st.warning("Please provide a Gemini API Key to enable AI responses.", icon="⚠️")
+        st.warning("Please provide a Gemini API Key.", icon="⚠️")
 
     st.markdown("---")
-    st.subheader("📚 Loaded Document")
-    st.info("📄 **The Intelligent Investor** by Benjamin Graham")
+    st.subheader("📄 Upload New PDF Document")
+    uploaded_file = st.file_uploader("Upload a PDF to index:", type=["pdf"])
     
+    if uploaded_file is not None:
+        if st.button("📥 Index & Embed Uploaded PDF", type="primary"):
+            with st.spinner(f"Indexing '{uploaded_file.name}'..."):
+                os.makedirs("data", exist_ok=True)
+                save_pdf_path = os.path.join("data", uploaded_file.name)
+                with open(save_pdf_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                # Re-generate embeddings for all PDFs in data directory
+                pdf_files = glob.glob("data/*.pdf")
+                embeddings_df_save_path = "data/text_chunks_and_embeddings_df.csv"
+                generate_embeddings_for_pdfs(pdf_files, embeddings_df_save_path)
+                st.cache_resource.clear()
+                st.success(f"Successfully indexed '{uploaded_file.name}'! Refreshing data...")
+                st.rerun()
+
+    st.markdown("---")
+    st.subheader("📚 Currently Loaded PDFs")
+    pdf_list = glob.glob("data/*.pdf")
+    if pdf_list:
+        for p in pdf_list:
+            st.write(f"- 📄 `{os.path.basename(p)}`")
+    else:
+        st.write("No PDF files found.")
+        
     st.markdown("---")
     st.markdown("🔗 [GitHub Repository](https://github.com/tushar10kumar/GenRAG)")
 
@@ -181,14 +184,13 @@ with st.sidebar:
 try:
     with st.spinner("Loading document embeddings..."):
         pages_and_chunks, embeddings, embeddings_df_save_path = load_rag_data()
-    st.toast("Document embeddings loaded successfully!", icon="🚀")
 except Exception as e:
     st.error(f"Failed to load document embeddings: {str(e)}")
     st.stop()
 
 st.subheader("💬 Ask a Question")
 query = st.text_input(
-    "Enter your query about the document:",
+    "Enter your query about your documents:",
     placeholder="e.g. What is margin of safety in investing?",
     key="query_input"
 )
@@ -198,12 +200,10 @@ with col1:
     search_button = st.button("🔍 Get Answer", type="primary", use_container_width=True)
 
 if search_button and query:
-    with st.spinner("Searching document & generating AI answer..."):
+    with st.spinner("Searching documents & generating AI answer..."):
         try:
-            # 1. Retrieve top chunks & score
             scores, indices = retrieve_relevant_resources(query=query, embeddings=embeddings)
             
-            # 2. Generate response
             ans = ask(
                 query=query,
                 embeddings=embeddings,
@@ -211,22 +211,21 @@ if search_button and query:
                 embeddings_df_save_path=embeddings_df_save_path
             )
             
-            # Display Answer
             st.markdown("### 🤖 AI Response")
             st.markdown(f'<div class="answer-card">{ans}</div>', unsafe_allow_html=True)
             
-            # Display Retrieved Context
             st.markdown("### 📖 Retrieved Document Context")
             for i, idx in enumerate(indices[:5]):
                 item = pages_and_chunks[idx]
                 score = float(scores[i].cpu().numpy())
+                doc_name = item.get("document_name", item.get("pdf_path", "Document"))
                 page_num = item.get("page_number", "N/A")
                 text = item.get("sentence_chunk", "")
                 
-                with st.expander(f"Chunk {i+1} (Page {page_num}) — Similarity Score: {score:.4f}"):
+                with st.expander(f"Chunk {i+1} ({doc_name} — Page {page_num}) — Score: {score:.4f}"):
                     st.write(text)
                     
         except Exception as e:
-            st.error(f"An error occurred while processing your request: {str(e)}")
+            st.error(f"An error occurred: {str(e)}")
 elif search_button and not query:
     st.warning("Please enter a question first!")
