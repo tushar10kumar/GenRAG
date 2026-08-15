@@ -12,8 +12,8 @@ __pycache__/
 # Environment variables
 .env
 
-# Data files (optional - remove if you want to include embeddings)
-data/*.csv
+# Data files
+# data/*.csv (included for pre-built cloud deployment)
 
 # IDE
 .vscode/
